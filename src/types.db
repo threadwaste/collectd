@@ -31,6 +31,7 @@ derive			value:DERIVE:0:U
 df_complex		value:GAUGE:0:U
 df_inodes		value:GAUGE:0:U
 df			used:GAUGE:0:1125899906842623, free:GAUGE:0:1125899906842623
+disk_ios		inprog:GAUGE:0:U, time:DERIVE:0:U, wttime:DERIVE:0:U
 disk_latency		read:GAUGE:0:U, write:GAUGE:0:U
 disk_merged		read:DERIVE:0:U, write:DERIVE:0:U
 disk_octets		read:DERIVE:0:U, write:DERIVE:0:U

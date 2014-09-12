@@ -102,6 +102,10 @@ typedef struct diskstats
 	derive_t avg_read_time;
 	derive_t avg_write_time;
 
+	gauge_t ios_inprog;
+	derive_t ios_time;
+	derive_t ios_wttime;
+
 	struct diskstats *next;
 } diskstats_t;
 
@@ -246,22 +250,20 @@ static int disk_init (void)
 	return (0);
 } /* int disk_init */
 
-static void disk_submit (const char *plugin_instance,
+static void submit (const char *plugin_instance,
 		const char *type,
-		derive_t read, derive_t write)
+		value_t *values,
+		int values_len)
 {
-	value_t values[2];
 	value_list_t vl = VALUE_LIST_INIT;
 
 	/* Both `ignorelist' and `plugin_instance' may be NULL. */
 	if (ignorelist_match (ignorelist, plugin_instance) != 0)
 	  return;
 
-	values[0].derive = read;
-	values[1].derive = write;
-
 	vl.values = values;
-	vl.values_len = 2;
+	vl.values_len = values_len;
+
 	sstrncpy (vl.host, hostname_g, sizeof (vl.host));
 	sstrncpy (vl.plugin, "disk", sizeof (vl.plugin));
 	sstrncpy (vl.plugin_instance, plugin_instance,
@@ -269,7 +271,32 @@ static void disk_submit (const char *plugin_instance,
 	sstrncpy (vl.type, type, sizeof (vl.type));
 
 	plugin_dispatch_values (&vl);
+} /* void submit */
+
+static void disk_submit (const char *plugin_instance,
+		const char *type,
+		derive_t read, derive_t write)
+{
+	value_t values[2];
+
+	values[0].derive = read;
+	values[1].derive = write;
+
+	submit (plugin_instance, type, values, 2);
 } /* void disk_submit */
+
+static void ios_submit (const char *plugin_instance,
+    const char *type,
+    gauge_t ios_inprog, derive_t ios_time, derive_t ios_wttime)
+{
+	value_t values[3];
+
+	values[0].gauge = ios_inprog;
+	values[1].derive = ios_time;
+	values[2].derive = ios_wttime;
+
+	submit (plugin_instance, type, values, 3);
+} /* void ios_submit */
 
 #if KERNEL_LINUX
 static counter_t disk_calc_time_incr (counter_t delta_time, counter_t delta_ops)
@@ -539,6 +566,11 @@ static int disk_read (void)
 	derive_t write_ops     = 0;
 	derive_t write_merged  = 0;
 	derive_t write_time    = 0;
+
+	gauge_t ios_inprog     = 0;
+	derive_t ios_time      = 0;
+	derive_t ios_wttime    = 0;
+
 	int is_disk = 0;
 
 	diskstats_t *ds, *pre_ds;
@@ -620,6 +652,9 @@ static int disk_read (void)
 				read_time    = atoll (fields[6 + fieldshift]);
 				write_merged = atoll (fields[8 + fieldshift]);
 				write_time   = atoll (fields[10+ fieldshift]);
+				ios_inprog   = atoll (fields[11+ fieldshift]);
+				ios_time     = atoll (fields[12+ fieldshift]);
+				ios_wttime   = atoll (fields[13+ fieldshift]);
 			}
 		}
 		else
@@ -697,6 +732,9 @@ static int disk_read (void)
 			ds->read_time = read_time;
 			ds->write_ops = write_ops;
 			ds->write_time = write_time;
+			ds->ios_inprog = ios_inprog;
+			ds->ios_time = ios_time;
+			ds->ios_wttime = ios_wttime;
 		} /* if (is_disk) */
 
 		/* Don't write to the RRDs if we've just started.. */
@@ -743,6 +781,9 @@ static int disk_read (void)
 		{
 			disk_submit (output_name, "disk_merged",
 					read_merged, write_merged);
+
+			ios_submit (output_name, "disk_ios",
+					ios_inprog, ios_time, ios_wttime);
 		} /* if (is_disk) */
 
 		/* release udev-based alternate name, if allocated */
